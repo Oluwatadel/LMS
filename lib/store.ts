@@ -8,6 +8,10 @@ import type {
   StudentProgress,
   Certificate,
   Role,
+  PermissionGroup,
+  Permission,
+  Payment,
+  CertificateTemplate,
 } from "./types";
 import {
   mockUsers,
@@ -17,6 +21,9 @@ import {
   mockAssignments,
   mockStudentProgress,
   mockCertificates,
+  mockPermissionGroups,
+  mockPayments,
+  mockCertificateTemplates,
 } from "./mock-data";
 
 // ============================================================
@@ -78,6 +85,9 @@ interface UserState {
   deleteUser: (id: string) => void;
   getUsersByRole: (role: Role) => User[];
   getStudents: () => User[];
+  enrollStudentInTrack: (studentId: string, trackId: string) => void;
+  removeStudentFromTrack: (studentId: string) => void;
+  assignPermissionGroup: (userId: string, groupId: string) => void;
 }
 
 export const useUserStore = create<UserState>((set, get) => ({
@@ -98,6 +108,24 @@ export const useUserStore = create<UserState>((set, get) => ({
   getStudents: () => {
     return get().users.filter((u) => u.role === "student");
   },
+  enrollStudentInTrack: (studentId: string, trackId: string) =>
+    set((state) => ({
+      users: state.users.map((u) =>
+        u.id === studentId ? { ...u, enrolledTrackId: trackId } : u
+      ),
+    })),
+  removeStudentFromTrack: (studentId: string) =>
+    set((state) => ({
+      users: state.users.map((u) =>
+        u.id === studentId ? { ...u, enrolledTrackId: undefined } : u
+      ),
+    })),
+  assignPermissionGroup: (userId: string, groupId: string) =>
+    set((state) => ({
+      users: state.users.map((u) =>
+        u.id === userId ? { ...u, permissionGroupId: groupId } : u
+      ),
+    })),
 }));
 
 // ============================================================
@@ -303,3 +331,142 @@ export const useLmsStore = create<LmsState>((set, get) => ({
       certificates: state.certificates.filter((c) => c.id !== certId),
     })),
 }));
+
+// ============================================================
+// Permission Store
+// ============================================================
+
+interface PermissionState {
+  permissionGroups: PermissionGroup[];
+  hasPermission: (userId: string, permission: Permission) => boolean;
+  getUserPermissionGroup: (userId: string) => PermissionGroup | undefined;
+  getPermissionGroupById: (id: string) => PermissionGroup | undefined;
+}
+
+export const usePermissionStore = create<PermissionState>((set, get) => ({
+  permissionGroups: [...mockPermissionGroups],
+
+  hasPermission: (userId: string, permission: Permission) => {
+    const user = useUserStore.getState().users.find((u) => u.id === userId);
+    if (!user) return false;
+    // Superadmins always have all permissions
+    if (user.role === "superadmin") return true;
+    if (!user.permissionGroupId) return false;
+    const group = get().permissionGroups.find(
+      (g) => g.id === user.permissionGroupId
+    );
+    return group ? group.permissions.includes(permission) : false;
+  },
+
+  getUserPermissionGroup: (userId: string) => {
+    const user = useUserStore.getState().users.find((u) => u.id === userId);
+    if (!user || !user.permissionGroupId) return undefined;
+    return get().permissionGroups.find((g) => g.id === user.permissionGroupId);
+  },
+
+  getPermissionGroupById: (id: string) => {
+    return get().permissionGroups.find((g) => g.id === id);
+  },
+}));
+
+// ============================================================
+// Payment Store
+// ============================================================
+
+interface PaymentState {
+  payments: Payment[];
+  addPayment: (payment: Payment) => void;
+  confirmPayment: (paymentId: string, adminId: string, adminName: string) => void;
+  getPaymentsForStudent: (studentId: string) => Payment[];
+  getPaymentForEnrollment: (studentId: string, trackId: string) => Payment | undefined;
+  getPendingPayments: () => Payment[];
+  getTotalRevenue: () => number;
+}
+
+export const usePaymentStore = create<PaymentState>((set, get) => ({
+  payments: [...mockPayments],
+
+  addPayment: (payment: Payment) =>
+    set((state) => ({ payments: [...state.payments, payment] })),
+
+  confirmPayment: (paymentId: string, adminId: string, adminName: string) =>
+    set((state) => ({
+      payments: state.payments.map((p) =>
+        p.id === paymentId
+          ? {
+              ...p,
+              status: "confirmed" as const,
+              confirmedBy: adminId,
+              confirmedByName: adminName,
+              confirmedAt: new Date().toISOString().split("T")[0],
+            }
+          : p
+      ),
+    })),
+
+  getPaymentsForStudent: (studentId: string) => {
+    return get().payments.filter((p) => p.studentId === studentId);
+  },
+
+  getPaymentForEnrollment: (studentId: string, trackId: string) => {
+    return get().payments.find(
+      (p) => p.studentId === studentId && p.trackId === trackId
+    );
+  },
+
+  getPendingPayments: () => {
+    return get().payments.filter((p) => p.status === "pending");
+  },
+
+  getTotalRevenue: () => {
+    return get()
+      .payments.filter((p) => p.status === "confirmed")
+      .reduce((sum, p) => sum + p.amount, 0);
+  },
+}));
+
+// ============================================================
+// Certificate Template Store
+// ============================================================
+
+interface CertificateTemplateState {
+  templates: CertificateTemplate[];
+  addTemplate: (template: CertificateTemplate) => void;
+  updateTemplate: (id: string, data: Partial<CertificateTemplate>) => void;
+  deleteTemplate: (id: string) => void;
+  getDefaultTemplate: () => CertificateTemplate | undefined;
+  setDefaultTemplate: (id: string) => void;
+}
+
+export const useCertificateTemplateStore = create<CertificateTemplateState>(
+  (set, get) => ({
+    templates: [...mockCertificateTemplates],
+
+    addTemplate: (template: CertificateTemplate) =>
+      set((state) => ({ templates: [...state.templates, template] })),
+
+    updateTemplate: (id: string, data: Partial<CertificateTemplate>) =>
+      set((state) => ({
+        templates: state.templates.map((t) =>
+          t.id === id ? { ...t, ...data } : t
+        ),
+      })),
+
+    deleteTemplate: (id: string) =>
+      set((state) => ({
+        templates: state.templates.filter((t) => t.id !== id),
+      })),
+
+    getDefaultTemplate: () => {
+      return get().templates.find((t) => t.isDefault);
+    },
+
+    setDefaultTemplate: (id: string) =>
+      set((state) => ({
+        templates: state.templates.map((t) => ({
+          ...t,
+          isDefault: t.id === id,
+        })),
+      })),
+  })
+);

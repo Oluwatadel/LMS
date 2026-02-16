@@ -3,7 +3,7 @@
 import { useEffect, type ReactNode } from "react";
 import { useRouter, usePathname } from "next/navigation";
 import Link from "next/link";
-import { useAuthStore } from "@/lib/store";
+import { useAuthStore, usePermissionStore } from "@/lib/store";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
@@ -25,13 +25,17 @@ import {
   LogOut,
   Menu,
   X,
+  CreditCard,
+  ClipboardList,
 } from "lucide-react";
+import type { Permission } from "@/lib/types";
 import { useState } from "react";
 
 interface NavItem {
   label: string;
   href: string;
   icon: ReactNode;
+  requiredPermission?: Permission;
 }
 
 const studentNav: NavItem[] = [
@@ -62,21 +66,37 @@ const adminNav: NavItem[] = [
     label: "Manage Tracks",
     href: "/admin/tracks",
     icon: <BookOpen className="h-4 w-4" />,
+    requiredPermission: "manage_tracks",
   },
   {
     label: "Users",
     href: "/admin/students",
     icon: <Users className="h-4 w-4" />,
+    requiredPermission: "manage_students",
+  },
+  {
+    label: "Payments",
+    href: "/admin/payments",
+    icon: <CreditCard className="h-4 w-4" />,
+    requiredPermission: "manage_payments",
+  },
+  {
+    label: "Assignments",
+    href: "/admin/assignments",
+    icon: <ClipboardList className="h-4 w-4" />,
+    requiredPermission: "manage_assignments",
   },
   {
     label: "Certificates",
     href: "/admin/certificates",
     icon: <Award className="h-4 w-4" />,
+    requiredPermission: "manage_certificates",
   },
   {
     label: "Add Content",
     href: "/admin/content",
     icon: <PlusCircle className="h-4 w-4" />,
+    requiredPermission: "manage_lessons",
   },
 ];
 
@@ -92,6 +112,12 @@ const mentorNav: NavItem[] = [
     icon: <Users className="h-4 w-4" />,
   },
   {
+    label: "Assignments",
+    href: "/admin/assignments",
+    icon: <ClipboardList className="h-4 w-4" />,
+    requiredPermission: "manage_assignments",
+  },
+  {
     label: "Progress",
     href: "/mentor/progress",
     icon: <BarChart3 className="h-4 w-4" />,
@@ -100,6 +126,7 @@ const mentorNav: NavItem[] = [
 
 export function AppShell({ children }: { children: ReactNode }) {
   const { user, isAuthenticated, logout } = useAuthStore();
+  const { hasPermission } = usePermissionStore();
   const router = useRouter();
   const pathname = usePathname();
   const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -112,12 +139,18 @@ export function AppShell({ children }: { children: ReactNode }) {
 
   if (!isAuthenticated || !user) return null;
 
-  const navItems =
+  const baseNav =
     user.role === "admin" || user.role === "superadmin"
       ? adminNav
       : user.role === "mentor"
       ? mentorNav
       : studentNav;
+
+  // Filter nav items by permission (superadmins see everything)
+  const navItems = baseNav.filter((item) => {
+    if (!item.requiredPermission) return true;
+    return hasPermission(user.id, item.requiredPermission);
+  });
 
   const handleLogout = () => {
     logout();

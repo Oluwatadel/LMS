@@ -7,6 +7,9 @@ import type {
   User,
   Certificate,
   MentorStudent,
+  PermissionGroup,
+  Payment,
+  CertificateTemplate,
 } from "./types";
 
 // ============================================================
@@ -23,6 +26,7 @@ export const mockUsers: User[] = [
     role: "superadmin",
     authProvider: "credentials",
     createdAt: "2024-01-01",
+    permissionGroupId: "pg-full-access",
   },
   // Admin
   {
@@ -33,6 +37,7 @@ export const mockUsers: User[] = [
     role: "admin",
     authProvider: "credentials",
     createdAt: "2024-03-01",
+    permissionGroupId: "pg-student-manager",
   },
   // Mentor
   {
@@ -43,6 +48,7 @@ export const mockUsers: User[] = [
     role: "mentor",
     authProvider: "credentials",
     createdAt: "2024-03-15",
+    permissionGroupId: "pg-assignment-manager",
   },
   // Current Students
   {
@@ -113,6 +119,8 @@ export const mockTracks: Track[] = [
     isCodingTrack: true,
     courseCount: 3,
     lessonCount: 9,
+    price: 25000,
+    currency: "NGN",
   },
   {
     id: "track-2",
@@ -122,6 +130,8 @@ export const mockTracks: Track[] = [
     isCodingTrack: true,
     courseCount: 2,
     lessonCount: 6,
+    price: 20000,
+    currency: "NGN",
   },
   {
     id: "track-3",
@@ -131,6 +141,8 @@ export const mockTracks: Track[] = [
     isCodingTrack: true,
     courseCount: 2,
     lessonCount: 6,
+    price: 30000,
+    currency: "NGN",
   },
 ];
 
@@ -613,5 +625,203 @@ export const mockMentorStudents: MentorStudent[] = [
     progressPercentage: 33,
     lessonsCompleted: 2,
     totalLessons: 6,
+  },
+];
+
+// ============================================================
+// Permission Groups
+// ============================================================
+
+export const mockPermissionGroups: PermissionGroup[] = [
+  {
+    id: "pg-content-manager",
+    name: "content_manager",
+    label: "Content Manager",
+    description: "Can manage tracks, courses, and lessons",
+    permissions: [
+      "manage_tracks",
+      "manage_courses",
+      "manage_lessons",
+      "view_analytics",
+    ],
+  },
+  {
+    id: "pg-student-manager",
+    name: "student_manager",
+    label: "Student Manager",
+    description: "Can manage students, enrollment, and payments",
+    permissions: [
+      "manage_students",
+      "enroll_students",
+      "remove_students",
+      "manage_payments",
+      "confirm_payments",
+      "view_analytics",
+    ],
+  },
+  {
+    id: "pg-certificate-manager",
+    name: "certificate_manager",
+    label: "Certificate Manager",
+    description: "Can manage certificates and upload templates",
+    permissions: [
+      "manage_certificates",
+      "upload_templates",
+      "view_analytics",
+    ],
+  },
+  {
+    id: "pg-assignment-manager",
+    name: "assignment_manager",
+    label: "Assignment Manager",
+    description: "Can manage and review student assignments",
+    permissions: [
+      "manage_assignments",
+      "review_assignments",
+      "view_analytics",
+    ],
+  },
+  {
+    id: "pg-full-access",
+    name: "full_access",
+    label: "Full Access",
+    description: "Has all permissions - typically assigned to superadmin",
+    permissions: [
+      "manage_tracks",
+      "manage_courses",
+      "manage_lessons",
+      "manage_students",
+      "enroll_students",
+      "remove_students",
+      "manage_certificates",
+      "upload_templates",
+      "manage_assignments",
+      "review_assignments",
+      "manage_payments",
+      "confirm_payments",
+      "manage_users",
+      "assign_roles",
+      "view_analytics",
+    ],
+  },
+];
+
+// ============================================================
+// Payments
+// ============================================================
+
+export const mockPayments: Payment[] = [
+  {
+    id: "pay-1",
+    studentId: "student-1",
+    studentName: "Alex Johnson",
+    trackId: "track-1",
+    trackName: "JavaScript Fundamentals",
+    amount: 25000,
+    currency: "NGN",
+    status: "confirmed",
+    paymentMethod: "bank_transfer",
+    referenceCode: "PAY-2024-001",
+    confirmedBy: "superadmin-1",
+    confirmedByName: "System Admin",
+    createdAt: "2024-05-28",
+    confirmedAt: "2024-05-29",
+  },
+  {
+    id: "pay-2",
+    studentId: "student-2",
+    studentName: "Maria Garcia",
+    trackId: "track-2",
+    trackName: "Python for Beginners",
+    amount: 20000,
+    currency: "NGN",
+    status: "confirmed",
+    paymentMethod: "card",
+    referenceCode: "PAY-2024-002",
+    confirmedBy: "admin-1",
+    confirmedByName: "Sarah Admin",
+    createdAt: "2024-07-08",
+    confirmedAt: "2024-07-09",
+  },
+  {
+    id: "pay-3",
+    studentId: "student-3",
+    studentName: "James Wilson",
+    trackId: "track-1",
+    trackName: "JavaScript Fundamentals",
+    amount: 25000,
+    currency: "NGN",
+    status: "pending",
+    paymentMethod: "bank_transfer",
+    referenceCode: "PAY-2024-003",
+    createdAt: "2024-08-04",
+  },
+  {
+    id: "pay-4",
+    studentId: "student-prev-1",
+    studentName: "Emily Chen",
+    trackId: "track-1",
+    trackName: "JavaScript Fundamentals",
+    amount: 25000,
+    currency: "NGN",
+    status: "confirmed",
+    paymentMethod: "manual",
+    referenceCode: "PAY-2023-010",
+    confirmedBy: "superadmin-1",
+    confirmedByName: "System Admin",
+    createdAt: "2023-08-30",
+    confirmedAt: "2023-09-01",
+  },
+];
+
+// ============================================================
+// Certificate Templates
+// ============================================================
+
+export const mockCertificateTemplates: CertificateTemplate[] = [
+  {
+    id: "tpl-1",
+    name: "Default Certificate",
+    backgroundImageUrl: "",
+    textFields: [
+      {
+        key: "studentName",
+        label: "Student Name",
+        x: 50,
+        y: 42,
+        fontSize: 32,
+        fontColor: "#1a1a2e",
+        fontWeight: "bold",
+      },
+      {
+        key: "trackName",
+        label: "Track Name",
+        x: 50,
+        y: 55,
+        fontSize: 20,
+        fontColor: "#16a34a",
+        fontWeight: "normal",
+      },
+      {
+        key: "issueDate",
+        label: "Issue Date",
+        x: 50,
+        y: 68,
+        fontSize: 14,
+        fontColor: "#6b7280",
+        fontWeight: "normal",
+      },
+      {
+        key: "certificateId",
+        label: "Certificate ID",
+        x: 50,
+        y: 78,
+        fontSize: 12,
+        fontColor: "#9ca3af",
+        fontWeight: "normal",
+      },
+    ],
+    isDefault: true,
+    createdAt: "2024-01-01",
   },
 ];

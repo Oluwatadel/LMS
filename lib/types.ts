@@ -6,6 +6,93 @@ export type Role = "student" | "admin" | "mentor" | "superadmin";
 
 export type AuthProvider = "credentials" | "google" | "github";
 
+// ============================================================
+// Permission System
+// ============================================================
+
+export type PermissionGroupName =
+  | "content_manager"
+  | "student_manager"
+  | "certificate_manager"
+  | "assignment_manager"
+  | "full_access";
+
+export type Permission =
+  | "manage_tracks"
+  | "manage_courses"
+  | "manage_lessons"
+  | "manage_students"
+  | "enroll_students"
+  | "remove_students"
+  | "manage_certificates"
+  | "upload_templates"
+  | "manage_assignments"
+  | "review_assignments"
+  | "manage_payments"
+  | "confirm_payments"
+  | "manage_users"
+  | "assign_roles"
+  | "view_analytics";
+
+export interface PermissionGroup {
+  id: string;
+  name: PermissionGroupName;
+  label: string;
+  description: string;
+  permissions: Permission[];
+}
+
+// ============================================================
+// Payment System
+// ============================================================
+
+export type PaymentStatus = "pending" | "confirmed" | "failed" | "refunded";
+export type PaymentMethod = "bank_transfer" | "card" | "manual";
+
+export interface Payment {
+  id: string;
+  studentId: string;
+  studentName: string;
+  trackId: string;
+  trackName: string;
+  amount: number;
+  currency: string;
+  status: PaymentStatus;
+  paymentMethod: PaymentMethod;
+  referenceCode: string;
+  confirmedBy?: string;
+  confirmedByName?: string;
+  createdAt: string;
+  confirmedAt?: string;
+}
+
+// ============================================================
+// Certificate Template System
+// ============================================================
+
+export interface CertificateTextField {
+  key: "studentName" | "trackName" | "issueDate" | "certificateId";
+  label: string;
+  x: number;
+  y: number;
+  fontSize: number;
+  fontColor: string;
+  fontWeight: "normal" | "bold";
+}
+
+export interface CertificateTemplate {
+  id: string;
+  name: string;
+  backgroundImageUrl: string;
+  textFields: CertificateTextField[];
+  isDefault: boolean;
+  createdAt: string;
+}
+
+// ============================================================
+// Core Models
+// ============================================================
+
 export interface User {
   id: string;
   name: string;
@@ -17,6 +104,7 @@ export interface User {
   isPreviousStudent?: boolean;
   createdAt?: string;
   authProvider?: AuthProvider;
+  permissionGroupId?: string;
 }
 
 export interface Track {
@@ -27,6 +115,8 @@ export interface Track {
   courseCount: number;
   lessonCount: number;
   imageUrl?: string;
+  price?: number;
+  currency?: string;
 }
 
 export interface Course {
@@ -73,6 +163,7 @@ export interface Certificate {
   trackId: string;
   trackName: string;
   issuedAt: string;
+  templateId?: string;
 }
 
 // ============================================================
