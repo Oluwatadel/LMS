@@ -1,7 +1,12 @@
 "use client";
 
-import { useState, useMemo } from "react";
-import { useLmsStore, useUserStore } from "@/lib/store";
+import { useState } from "react";
+import {
+  useAuthStore,
+  useLmsStore,
+  useUserStore,
+  usePermissionStore,
+} from "@/lib/store";
 import {
   Table,
   TableBody,
@@ -37,111 +42,83 @@ import {
   CheckCircle2,
   XCircle,
   Clock,
-  FileCode,
   Eye,
+  FileText,
+  Code2,
 } from "lucide-react";
-
-interface AssignmentView {
-  assignmentId: string;
-  assignmentTitle: string;
-  lessonTitle: string;
-  trackId: string;
-  trackName: string;
-  language: string;
-  submissions: SubmissionView[];
-}
-
-interface SubmissionView {
-  studentId: string;
-  studentName: string;
-  submitted: boolean;
-  passed: boolean;
-  lessonId: string;
-}
+import type { Assignment, StudentProgress, User } from "@/lib/types";
 
 export default function AdminAssignmentsPage() {
-  const { assignments, lessons, courses, tracks, studentProgress, updateProgress } =
-    useLmsStore();
+  const currentUser = useAuthStore((s) => s.user);
+  const {
+    tracks,
+    courses,
+    assignments,
+    studentProgress,
+    updateProgress,
+  } = useLmsStore();
   const { users } = useUserStore();
+  const { hasPermission } = usePermissionStore();
+
   const [search, setSearch] = useState("");
   const [filterTrack, setFilterTrack] = useState<string>("all");
   const [filterStatus, setFilterStatus] = useState<string>("all");
 
-  const students = users.filter((u) => u.role === "student");
+  const isSuperAdmin = currentUser?.role === "superadmin";
+  const canReview =
+    isSuperAdmin ||
+    (currentUser
+      ? hasPermission(currentUser.id, "review_assignments")
+      : false);
 
-  // Build assignment views with track info and submissions
-  const assignmentViews = useMemo(() => {
-    return assignments.map((assignment) => {
-      const lesson = lessons.find((l) => l.id === assignment.lessonId);
-      const course = lesson
-        ? courses.find((c) => c.id === lesson.courseId)
-        : null;
-      const track = course ? tracks.find((t) => t.id === course.trackId) : null;
+  // Build a view model: assignment + student submissions
+  const assignmentViews = assignments.map((assignment) => {
+    const course = courses.find((c) => c.id === assignment.courseId);
+    const track = course
+      ? tracks.find((t) => t.id === course.trackId)
+      : undefined;
 
-      // Find students enrolled in this track
-      const trackStudents = students.filter(
-        (s) => s.enrolledTrackId === track?.id
-      );
+    const submissions = studentProgress.filter(
+      (sp) => sp.lessonId === assignment.id && sp.assignmentSubmitted
+    );
 
-      const submissions: SubmissionView[] = trackStudents.map((student) => {
-        const progress = studentProgress.find(
-          (p) =>
-            p.studentId === student.id && p.lessonId === assignment.lessonId
-        );
-        return {
-          studentId: student.id,
-          studentName: student.name,
-          submitted: progress?.assignmentSubmitted ?? false,
-          passed: progress?.assignmentPassed ?? false,
-          lessonId: assignment.lessonId,
-        };
-      });
+    const pendingSubmissions = submissions.filter(
+      (sp) => !sp.assignmentPassed && !sp.isCompleted
+    );
 
-      return {
-        assignmentId: assignment.id,
-        assignmentTitle: assignment.title,
-        lessonTitle: lesson?.title ?? "Unknown",
-        trackId: track?.id ?? "",
-        trackName: track?.name ?? "Unknown",
-        language: assignment.language,
-        submissions,
-      } as AssignmentView;
-    });
-  }, [assignments, lessons, courses, tracks, students, studentProgress]);
-
-  const filteredAssignments = assignmentViews.filter((a) => {
-    const matchesSearch =
-      a.assignmentTitle.toLowerCase().includes(search.toLowerCase()) ||
-      a.lessonTitle.toLowerCase().includes(search.toLowerCase()) ||
-      a.trackName.toLowerCase().includes(search.toLowerCase());
-    const matchesTrack = filterTrack === "all" || a.trackId === filterTrack;
-
-    if (filterStatus === "all") return matchesSearch && matchesTrack;
-    if (filterStatus === "has_submissions") {
-      return (
-        matchesSearch &&
-        matchesTrack &&
-        a.submissions.some((s) => s.submitted)
-      );
-    }
-    if (filterStatus === "pending_review") {
-      return (
-        matchesSearch &&
-        matchesTrack &&
-        a.submissions.some((s) => s.submitted && !s.passed)
-      );
-    }
-    return matchesSearch && matchesTrack;
+    return {
+      assignment,
+      course,
+      track,
+      submissions,
+      pendingCount: pendingSubmissions.length,
+      totalSubmissions: submissions.length,
+    };
   });
 
-  // Stats
+  const filteredViews = assignmentViews.filter((view) => {
+    const matchesSearch =
+      view.assignment.title.toLowerCase().includes(search.toLowerCase()) ||
+      (view.course?.title || "").toLowerCase().includes(search.toLowerCase()) ||
+      (view.track?.name || "").toLowerCase().includes(search.toLowerCase());
+    const matchesTrack =
+      filterTrack === "all" || view.track?.id === filterTrack;
+    const matchesStatus =
+      filterStatus === "all" ||
+      (filterStatus === "pending" && view.pendingCount > 0) ||
+      (filterStatus === "no_submissions" && view.totalSubmissions === 0) ||
+      (filterStatus === "reviewed" &&
+        view.totalSubmissions > 0 &&
+        view.pendingCount === 0);
+    return matchesSearch && matchesTrack && matchesStatus;
+  });
+
   const totalAssignments = assignments.length;
-  const totalSubmissions = assignmentViews.reduce(
-    (sum, a) => sum + a.submissions.filter((s) => s.submitted).length,
-    0
-  );
-  const totalPassed = assignmentViews.reduce(
-    (sum, a) => sum + a.submissions.filter((s) => s.passed).length,
+  const totalSubmissions = studentProgress.filter(
+    (sp) => sp.assignmentSubmitted
+  ).length;
+  const totalPending = assignmentViews.reduce(
+    (sum, v) => sum + v.pendingCount,
     0
   );
 
@@ -152,7 +129,7 @@ export default function AdminAssignmentsPage() {
           Assignment Management
         </h1>
         <p className="text-muted-foreground mt-1">
-          View all assignments across tracks and review student submissions
+          Review submissions, track progress, and manage student assignments
         </p>
       </div>
 
@@ -176,7 +153,7 @@ export default function AdminAssignmentsPage() {
         <Card className="border-border">
           <CardContent className="flex items-center gap-4 pt-6">
             <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-chart-2/10">
-              <FileCode className="h-5 w-5 text-chart-2" />
+              <FileText className="h-5 w-5 text-chart-2" />
             </div>
             <div>
               <p className="text-sm text-muted-foreground">
@@ -190,25 +167,25 @@ export default function AdminAssignmentsPage() {
         </Card>
         <Card className="border-border">
           <CardContent className="flex items-center gap-4 pt-6">
-            <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-success/10">
-              <CheckCircle2 className="h-5 w-5 text-success" />
+            <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-warning/10">
+              <Clock className="h-5 w-5 text-warning" />
             </div>
             <div>
-              <p className="text-sm text-muted-foreground">Passed</p>
+              <p className="text-sm text-muted-foreground">Pending Review</p>
               <p className="text-xl font-bold text-foreground tabular-nums">
-                {totalPassed}
+                {totalPending}
               </p>
             </div>
           </CardContent>
         </Card>
       </div>
 
-      {/* Search and filters */}
+      {/* Search and Filters */}
       <div className="flex flex-col gap-3 md:flex-row">
         <div className="relative flex-1">
           <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
           <Input
-            placeholder="Search assignments..."
+            placeholder="Search assignments, courses, or tracks..."
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             className="pl-9"
@@ -232,9 +209,10 @@ export default function AdminAssignmentsPage() {
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="all">All</SelectItem>
-            <SelectItem value="has_submissions">Has Submissions</SelectItem>
-            <SelectItem value="pending_review">Pending Review</SelectItem>
+            <SelectItem value="all">All Status</SelectItem>
+            <SelectItem value="pending">Has Pending</SelectItem>
+            <SelectItem value="reviewed">All Reviewed</SelectItem>
+            <SelectItem value="no_submissions">No Submissions</SelectItem>
           </SelectContent>
         </Select>
       </div>
@@ -245,16 +223,16 @@ export default function AdminAssignmentsPage() {
           <TableHeader>
             <TableRow>
               <TableHead className="text-foreground">Assignment</TableHead>
-              <TableHead className="text-foreground">Lesson</TableHead>
+              <TableHead className="text-foreground">Course</TableHead>
               <TableHead className="text-foreground">Track</TableHead>
               <TableHead className="text-foreground text-center">
-                Language
+                Type
               </TableHead>
               <TableHead className="text-foreground text-center">
                 Submissions
               </TableHead>
               <TableHead className="text-foreground text-center">
-                Passed
+                Pending
               </TableHead>
               <TableHead className="text-foreground text-right">
                 Actions
@@ -262,7 +240,7 @@ export default function AdminAssignmentsPage() {
             </TableRow>
           </TableHeader>
           <TableBody>
-            {filteredAssignments.length === 0 ? (
+            {filteredViews.length === 0 ? (
               <TableRow>
                 <TableCell
                   colSpan={7}
@@ -272,18 +250,14 @@ export default function AdminAssignmentsPage() {
                 </TableCell>
               </TableRow>
             ) : (
-              filteredAssignments.map((av) => (
+              filteredViews.map((view) => (
                 <AssignmentRow
-                  key={av.assignmentId}
-                  view={av}
-                  onReview={(studentId, lessonId, passed) => {
-                    updateProgress(studentId, lessonId, {
-                      assignmentPassed: passed,
-                    });
-                    toast.success(
-                      `Submission ${passed ? "approved" : "rejected"}`
-                    );
-                  }}
+                  key={view.assignment.id}
+                  view={view}
+                  canReview={canReview}
+                  users={users}
+                  studentProgress={studentProgress}
+                  updateProgress={updateProgress}
                 />
               ))
             )}
@@ -294,54 +268,100 @@ export default function AdminAssignmentsPage() {
   );
 }
 
+// ============================================================
+// Assignment Row
+// ============================================================
+
+interface AssignmentView {
+  assignment: Assignment;
+  course: { id: string; title: string; trackId: string } | undefined;
+  track: { id: string; name: string } | undefined;
+  submissions: StudentProgress[];
+  pendingCount: number;
+  totalSubmissions: number;
+}
+
 function AssignmentRow({
   view,
-  onReview,
+  canReview,
+  users,
+  studentProgress,
+  updateProgress,
 }: {
   view: AssignmentView;
-  onReview: (studentId: string, lessonId: string, passed: boolean) => void;
+  canReview: boolean;
+  users: User[];
+  studentProgress: StudentProgress[];
+  updateProgress: (
+    studentId: string,
+    lessonId: string,
+    data: Partial<StudentProgress>
+  ) => void;
 }) {
   const [detailOpen, setDetailOpen] = useState(false);
-  const submittedCount = view.submissions.filter((s) => s.submitted).length;
-  const passedCount = view.submissions.filter((s) => s.passed).length;
-
-  const langColor =
-    view.language === "javascript"
-      ? "bg-warning/10 text-warning border-warning/20"
-      : view.language === "python"
-      ? "bg-chart-2/10 text-chart-2 border-chart-2/20"
-      : "bg-chart-4/10 text-chart-4 border-chart-4/20";
+  const { assignment, course, track, submissions, pendingCount, totalSubmissions } =
+    view;
 
   return (
     <>
       <TableRow>
-        <TableCell className="font-medium text-foreground">
-          {view.assignmentTitle}
-        </TableCell>
-        <TableCell className="text-sm text-muted-foreground">
-          {view.lessonTitle}
+        <TableCell>
+          <div>
+            <p className="font-medium text-foreground">{assignment.title}</p>
+            <p className="text-xs text-muted-foreground line-clamp-1 max-w-[250px]">
+              {assignment.description}
+            </p>
+          </div>
         </TableCell>
         <TableCell>
-          <Badge variant="outline" className="text-xs">
-            {view.trackName}
-          </Badge>
+          <span className="text-sm text-muted-foreground">
+            {course?.title || "Unknown"}
+          </span>
+        </TableCell>
+        <TableCell>
+          {track ? (
+            <Badge variant="outline" className="text-xs">
+              {track.name}
+            </Badge>
+          ) : (
+            <span className="text-xs text-muted-foreground">--</span>
+          )}
         </TableCell>
         <TableCell className="text-center">
-          <Badge className={`text-[10px] ${langColor} hover:${langColor}`}>
-            {view.language}
-          </Badge>
+          {assignment.isCodingAssignment ? (
+            <Badge className="gap-1 bg-chart-2/10 text-chart-2 border-chart-2/20 hover:bg-chart-2/10 text-[10px]">
+              <Code2 className="h-3 w-3" />
+              Code
+            </Badge>
+          ) : (
+            <Badge variant="secondary" className="text-[10px]">
+              Written
+            </Badge>
+          )}
         </TableCell>
-        <TableCell className="text-center text-foreground tabular-nums">
-          {submittedCount}
+        <TableCell className="text-center">
+          <span className="font-medium text-foreground tabular-nums">
+            {totalSubmissions}
+          </span>
         </TableCell>
-        <TableCell className="text-center text-foreground tabular-nums">
-          {passedCount}
+        <TableCell className="text-center">
+          {pendingCount > 0 ? (
+            <Badge className="bg-warning/10 text-warning border-warning/20 hover:bg-warning/10 text-[10px] tabular-nums">
+              {pendingCount}
+            </Badge>
+          ) : totalSubmissions > 0 ? (
+            <Badge className="bg-success/10 text-success border-success/20 hover:bg-success/10 text-[10px]">
+              Done
+            </Badge>
+          ) : (
+            <span className="text-xs text-muted-foreground">--</span>
+          )}
         </TableCell>
         <TableCell className="text-right">
           <Button
             size="sm"
-            variant="ghost"
-            className="h-8 gap-1 text-xs"
+            variant="outline"
+            className="gap-1 text-xs"
             onClick={() => setDetailOpen(true)}
           >
             <Eye className="h-3.5 w-3.5" />
@@ -350,108 +370,157 @@ function AssignmentRow({
         </TableCell>
       </TableRow>
 
+      {/* Submission Detail Dialog */}
       <Dialog open={detailOpen} onOpenChange={setDetailOpen}>
         <DialogContent className="max-w-2xl">
           <DialogHeader>
             <DialogTitle className="text-foreground">
-              {view.assignmentTitle}
+              {assignment.title}
             </DialogTitle>
             <DialogDescription>
-              {view.trackName} &mdash; {view.lessonTitle}
+              {course?.title} - {track?.name || "Unknown Track"}
             </DialogDescription>
           </DialogHeader>
-          <div className="max-h-[60vh] overflow-y-auto">
-            {view.submissions.length === 0 ? (
-              <p className="text-center text-muted-foreground py-6">
-                No students enrolled in this track
-              </p>
-            ) : (
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead className="text-foreground">Student</TableHead>
-                    <TableHead className="text-foreground text-center">
-                      Submitted
-                    </TableHead>
-                    <TableHead className="text-foreground text-center">
-                      Status
-                    </TableHead>
-                    <TableHead className="text-foreground text-right">
-                      Actions
-                    </TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {view.submissions.map((sub) => (
-                    <TableRow key={sub.studentId}>
-                      <TableCell className="font-medium text-foreground">
-                        {sub.studentName}
-                      </TableCell>
-                      <TableCell className="text-center">
-                        {sub.submitted ? (
-                          <Badge className="bg-primary/10 text-primary border-primary/20 hover:bg-primary/10 text-[10px]">
-                            Yes
-                          </Badge>
-                        ) : (
-                          <Badge
-                            variant="outline"
-                            className="text-[10px] text-muted-foreground"
-                          >
-                            No
-                          </Badge>
-                        )}
-                      </TableCell>
-                      <TableCell className="text-center">
-                        {sub.passed ? (
-                          <Badge className="gap-1 bg-success/10 text-success border-success/20 hover:bg-success/10 text-[10px]">
-                            <CheckCircle2 className="h-3 w-3" />
-                            Passed
-                          </Badge>
-                        ) : sub.submitted ? (
-                          <Badge className="gap-1 bg-warning/10 text-warning border-warning/20 hover:bg-warning/10 text-[10px]">
-                            <Clock className="h-3 w-3" />
-                            Pending Review
-                          </Badge>
-                        ) : (
-                          <span className="text-xs text-muted-foreground">
-                            --
-                          </span>
-                        )}
-                      </TableCell>
-                      <TableCell className="text-right">
-                        {sub.submitted && !sub.passed && (
-                          <div className="flex items-center justify-end gap-1">
-                            <Button
-                              size="sm"
-                              variant="default"
-                              className="h-7 text-xs gap-1"
-                              onClick={() =>
-                                onReview(sub.studentId, sub.lessonId, true)
-                              }
-                            >
-                              <CheckCircle2 className="h-3 w-3" />
-                              Approve
-                            </Button>
-                            <Button
-                              size="sm"
-                              variant="outline"
-                              className="h-7 text-xs gap-1 text-destructive border-destructive/20 hover:bg-destructive/10"
-                              onClick={() =>
-                                onReview(sub.studentId, sub.lessonId, false)
-                              }
-                            >
-                              <XCircle className="h-3 w-3" />
-                              Reject
-                            </Button>
+
+          <div className="space-y-4">
+            <div className="rounded-lg border border-border bg-muted/50 p-3">
+              <p className="text-sm text-foreground">{assignment.description}</p>
+              <div className="flex gap-2 mt-2">
+                {assignment.isCodingAssignment && (
+                  <Badge variant="secondary" className="text-xs gap-1">
+                    <Code2 className="h-3 w-3" />
+                    Coding Assignment
+                  </Badge>
+                )}
+                {assignment.maxScore && (
+                  <Badge variant="outline" className="text-xs">
+                    Max Score: {assignment.maxScore}
+                  </Badge>
+                )}
+              </div>
+            </div>
+
+            {/* Submissions List */}
+            <div>
+              <h4 className="text-sm font-medium text-foreground mb-3">
+                Submissions ({submissions.length})
+              </h4>
+              {submissions.length === 0 ? (
+                <p className="text-sm text-muted-foreground text-center py-6">
+                  No submissions yet
+                </p>
+              ) : (
+                <div className="space-y-2 max-h-64 overflow-y-auto">
+                  {submissions.map((submission) => {
+                    const student = users.find(
+                      (u) => u.id === submission.studentId
+                    );
+                    const isPending =
+                      submission.assignmentSubmitted &&
+                      !submission.assignmentPassed &&
+                      !submission.isCompleted;
+
+                    return (
+                      <div
+                        key={`${submission.studentId}-${submission.lessonId}`}
+                        className="flex items-center justify-between rounded-lg border border-border p-3"
+                      >
+                        <div className="flex items-center gap-3">
+                          <div className="flex h-8 w-8 items-center justify-center rounded-full bg-primary/10 text-xs font-medium text-primary">
+                            {student?.name
+                              ?.split(" ")
+                              .map((n) => n[0])
+                              .join("")
+                              .toUpperCase() || "?"}
                           </div>
-                        )}
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            )}
+                          <div>
+                            <p className="text-sm font-medium text-foreground">
+                              {student?.name || "Unknown Student"}
+                            </p>
+                            <p className="text-xs text-muted-foreground">
+                              {student?.email || ""}
+                            </p>
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          {submission.assignmentPassed ? (
+                            <Badge className="gap-1 bg-success/10 text-success border-success/20 hover:bg-success/10 text-xs">
+                              <CheckCircle2 className="h-3 w-3" />
+                              Passed
+                            </Badge>
+                          ) : isPending ? (
+                            <>
+                              <Badge className="gap-1 bg-warning/10 text-warning border-warning/20 hover:bg-warning/10 text-xs">
+                                <Clock className="h-3 w-3" />
+                                Pending
+                              </Badge>
+                              {canReview && (
+                                <div className="flex gap-1 ml-2">
+                                  <Button
+                                    size="sm"
+                                    variant="outline"
+                                    className="h-7 gap-1 text-[10px] text-success border-success/30 hover:bg-success/10 hover:text-success"
+                                    onClick={() => {
+                                      updateProgress(
+                                        submission.studentId,
+                                        submission.lessonId,
+                                        {
+                                          assignmentPassed: true,
+                                          isCompleted: true,
+                                        }
+                                      );
+                                      toast.success(
+                                        `Submission by ${student?.name} approved`
+                                      );
+                                    }}
+                                  >
+                                    <CheckCircle2 className="h-3 w-3" />
+                                    Approve
+                                  </Button>
+                                  <Button
+                                    size="sm"
+                                    variant="outline"
+                                    className="h-7 gap-1 text-[10px] text-destructive border-destructive/30 hover:bg-destructive/10 hover:text-destructive"
+                                    onClick={() => {
+                                      updateProgress(
+                                        submission.studentId,
+                                        submission.lessonId,
+                                        {
+                                          assignmentSubmitted: false,
+                                          assignmentPassed: false,
+                                        }
+                                      );
+                                      toast.success(
+                                        `Submission by ${student?.name} returned for revision`
+                                      );
+                                    }}
+                                  >
+                                    <XCircle className="h-3 w-3" />
+                                    Return
+                                  </Button>
+                                </div>
+                              )}
+                            </>
+                          ) : (
+                            <Badge variant="outline" className="text-xs">
+                              Not Passed
+                            </Badge>
+                          )}
+                          {submission.score !== undefined && (
+                            <Badge variant="secondary" className="text-xs tabular-nums">
+                              Score: {submission.score}
+                              {assignment.maxScore ? `/${assignment.maxScore}` : ""}
+                            </Badge>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
           </div>
+
           <DialogFooter>
             <DialogClose asChild>
               <Button variant="outline">Close</Button>
