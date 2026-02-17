@@ -22,6 +22,26 @@ import {
   CheckCircle2,
 } from "lucide-react";
 import { toast } from "sonner";
+import type { Judge0Response } from "@/lib/judge0";
+
+async function executeCode(
+  sourceCode: string,
+  language: string,
+  stdin?: string
+): Promise<Judge0Response> {
+  const res = await fetch("/api/judge0", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ source_code: sourceCode, language, stdin }),
+  });
+
+  if (!res.ok) {
+    const errData = await res.json().catch(() => ({}));
+    throw new Error(errData.error || `Execution failed (${res.status})`);
+  }
+
+  return res.json();
+}
 
 export default function AssignmentPage({
   params,
@@ -42,33 +62,49 @@ export default function AssignmentPage({
   const [code, setCode] = useState(assignment?.starterCode ?? "");
   const [output, setOutput] = useState("");
   const [error, setError] = useState("");
+  const [compileOutput, setCompileOutput] = useState("");
   const [passed, setPassed] = useState<boolean | null>(null);
+  const [execTime, setExecTime] = useState<string | null>(null);
+  const [execMemory, setExecMemory] = useState<number | null>(null);
   const [isRunning, setIsRunning] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  const progress = user && assignment
-    ? getProgressForLesson(user.id, assignment.lessonId)
-    : undefined;
+  const progress =
+    user && assignment
+      ? getProgressForLesson(user.id, assignment.lessonId)
+      : undefined;
 
-  const handleRun = useCallback(async () => {
-    setIsRunning(true);
+  const clearOutput = () => {
     setOutput("");
     setError("");
+    setCompileOutput("");
     setPassed(null);
+    setExecTime(null);
+    setExecMemory(null);
+  };
 
-    // Simulate backend /api/code/run
-    await new Promise((r) => setTimeout(r, 1500));
+  const handleRun = useCallback(async () => {
+    if (!assignment) return;
+    setIsRunning(true);
+    clearOutput();
 
-    // Simple mock execution
     try {
-      if (!assignment) throw new Error("No assignment found");
+      const result = await executeCode(code, assignment.language);
 
-      // Mock: extract console.log outputs from code for demo
-      const mockOutput = simulateOutput(code, assignment.language);
-      setOutput(mockOutput);
+      setExecTime(result.time);
+      setExecMemory(result.memory);
+
+      if (result.compile_output && result.status.id === 6) {
+        setCompileOutput(result.compile_output);
+      } else if (result.stderr) {
+        setError(result.stderr);
+      } else {
+        setOutput(result.stdout || "");
+      }
       toast.info("Code executed successfully");
     } catch (e) {
       setError(e instanceof Error ? e.message : "Execution error");
+      toast.error("Failed to execute code");
     } finally {
       setIsRunning(false);
     }
@@ -78,43 +114,66 @@ export default function AssignmentPage({
     if (!user || !assignment) return;
 
     setIsSubmitting(true);
-    setOutput("");
-    setError("");
-    setPassed(null);
+    clearOutput();
 
-    // Simulate backend /api/code/submit
-    await new Promise((r) => setTimeout(r, 2000));
+    try {
+      const result = await executeCode(code, assignment.language);
 
-    const mockOutput = simulateOutput(code, assignment.language);
-    setOutput(mockOutput);
+      setExecTime(result.time);
+      setExecMemory(result.memory);
 
-    const isPassed =
-      mockOutput.trim() === assignment.expectedOutput.trim();
-    setPassed(isPassed);
+      if (result.compile_output && result.status.id === 6) {
+        setCompileOutput(result.compile_output);
+        updateProgress(user.id, assignment.lessonId, {
+          assignmentSubmitted: true,
+          assignmentPassed: false,
+        });
+        toast.error("Compilation error. Fix the issues and try again.");
+        return;
+      }
 
-    if (isPassed) {
-      updateProgress(user.id, assignment.lessonId, {
-        assignmentSubmitted: true,
-        assignmentPassed: true,
-        isCompleted: true,
-      });
-      toast.success("Assignment passed! Lesson marked as complete.");
-    } else {
-      updateProgress(user.id, assignment.lessonId, {
-        assignmentSubmitted: true,
-        assignmentPassed: false,
-      });
-      toast.error("Output doesn't match expected result. Try again!");
+      if (result.stderr) {
+        setError(result.stderr);
+        updateProgress(user.id, assignment.lessonId, {
+          assignmentSubmitted: true,
+          assignmentPassed: false,
+        });
+        toast.error("Runtime error. Check the output for details.");
+        return;
+      }
+
+      const actualOutput = (result.stdout || "").trim();
+      setOutput(actualOutput);
+
+      const isPassed =
+        actualOutput === assignment.expectedOutput.trim();
+      setPassed(isPassed);
+
+      if (isPassed) {
+        updateProgress(user.id, assignment.lessonId, {
+          assignmentSubmitted: true,
+          assignmentPassed: true,
+          isCompleted: true,
+        });
+        toast.success("Assignment passed! Lesson marked as complete.");
+      } else {
+        updateProgress(user.id, assignment.lessonId, {
+          assignmentSubmitted: true,
+          assignmentPassed: false,
+        });
+        toast.error("Output doesn't match expected result. Try again!");
+      }
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Submission error");
+      toast.error("Failed to submit code");
+    } finally {
+      setIsSubmitting(false);
     }
-
-    setIsSubmitting(false);
   }, [code, user, assignment, updateProgress]);
 
   const handleReset = () => {
     setCode(assignment?.starterCode ?? "");
-    setOutput("");
-    setError("");
-    setPassed(null);
+    clearOutput();
   };
 
   if (!assignment || !lesson) {
@@ -177,7 +236,7 @@ export default function AssignmentPage({
             variant="outline"
             size="sm"
             onClick={handleRun}
-            disabled={isRunning}
+            disabled={isRunning || isSubmitting}
           >
             {isRunning ? (
               <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" />
@@ -189,7 +248,7 @@ export default function AssignmentPage({
           <Button
             size="sm"
             onClick={handleSubmit}
-            disabled={isSubmitting}
+            disabled={isSubmitting || isRunning}
           >
             {isSubmitting ? (
               <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" />
@@ -202,7 +261,10 @@ export default function AssignmentPage({
       </div>
 
       {/* Main content */}
-      <ResizablePanelGroup direction="horizontal" className="flex-1 rounded-xl border border-border overflow-hidden">
+      <ResizablePanelGroup
+        direction="horizontal"
+        className="flex-1 rounded-xl border border-border overflow-hidden"
+      >
         {/* Instructions panel */}
         <ResizablePanel defaultSize={30} minSize={20}>
           <div className="flex h-full flex-col bg-card">
@@ -248,7 +310,11 @@ export default function AssignmentPage({
               <OutputConsole
                 output={output}
                 error={error}
+                compileOutput={compileOutput}
                 passed={passed}
+                time={execTime}
+                memory={execMemory}
+                isLoading={isRunning || isSubmitting}
               />
             </ResizablePanel>
           </ResizablePanelGroup>
@@ -256,30 +322,4 @@ export default function AssignmentPage({
       </ResizablePanelGroup>
     </div>
   );
-}
-
-// Mock code execution simulator for demo purposes
-// In production, this would be sent to the backend
-function simulateOutput(code: string, language: string): string {
-  try {
-    if (language === "javascript") {
-      const logs: string[] = [];
-      const mockConsole = {
-        log: (...args: unknown[]) => logs.push(args.map(String).join(" ")),
-      };
-
-      // Very basic mock execution
-      const wrappedCode = code
-        .replace(/console\.log/g, "mockConsole.log");
-      
-      const fn = new Function("mockConsole", wrappedCode);
-      fn(mockConsole);
-      return logs.join("\n");
-    }
-
-    // For Python/C#, return a placeholder since these need backend execution
-    return `[Mock] Code sent to backend for ${language} execution.\nIn production, this would use a secure sandbox.`;
-  } catch (e) {
-    return `Error: ${e instanceof Error ? e.message : "Unknown error"}`;
-  }
 }
