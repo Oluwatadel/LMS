@@ -133,7 +133,7 @@ export function AppShell({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     if (!isAuthenticated) {
-      router.push("/");
+      router.push("/auth");
     }
   }, [isAuthenticated, router]);
 
@@ -154,7 +154,7 @@ export function AppShell({ children }: { children: ReactNode }) {
 
   const handleLogout = () => {
     logout();
-    router.push("/");
+    router.push("/auth");
   };
 
   const initials = user.name

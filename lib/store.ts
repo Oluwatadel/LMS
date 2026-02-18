@@ -160,6 +160,9 @@ interface LmsState {
   updateLesson: (id: string, data: Partial<Lesson>) => void;
   deleteLesson: (id: string) => void;
   addAssignment: (assignment: Assignment) => void;
+  updateAssignment: (id: string, data: Partial<Assignment>) => void;
+  deleteAssignment: (id: string) => void;
+  getAssignmentsForTrack: (trackId: string) => Assignment[];
   isTrackComplete: (studentId: string, trackId: string) => boolean;
   issueCertificate: (studentId: string, studentName: string, trackId: string, trackName: string) => Certificate;
   getCertificatesForStudent: (studentId: string) => Certificate[];
@@ -299,6 +302,26 @@ export const useLmsStore = create<LmsState>((set, get) => ({
 
   addAssignment: (assignment: Assignment) =>
     set((state) => ({ assignments: [...state.assignments, assignment] })),
+
+  updateAssignment: (id: string, data: Partial<Assignment>) =>
+    set((state) => ({
+      assignments: state.assignments.map((a) =>
+        a.id === id ? { ...a, ...data } : a
+      ),
+    })),
+
+  deleteAssignment: (id: string) =>
+    set((state) => ({
+      assignments: state.assignments.filter((a) => a.id !== id),
+    })),
+
+  getAssignmentsForTrack: (trackId: string) => {
+    const courses = get().courses.filter((c) => c.trackId === trackId);
+    const courseIds = courses.map((c) => c.id);
+    const lessons = get().lessons.filter((l) => courseIds.includes(l.courseId));
+    const lessonIds = lessons.map((l) => l.id);
+    return get().assignments.filter((a) => lessonIds.includes(a.lessonId));
+  },
 
   issueCertificate: (studentId: string, studentName: string, trackId: string, trackName: string) => {
     const existing = get().certificates.find(
